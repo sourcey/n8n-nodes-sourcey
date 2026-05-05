@@ -17,19 +17,19 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/sourcey/n8n-nodes-sourcey.git"
+        "url": "git+https://github.com/sourcey/n8n-nodes-sourcey.git"
     },
-   "scripts": {
-		"build": "n8n-node build",
-		"build:watch": "tsc --watch",
-		"dev": "n8n-node dev",
-		"lint": "n8n-node lint",
-		"lint:fix": "n8n-node lint --fix",
-		"release": "n8n-node release",
-		"prepublishOnly": "n8n-node prerelease",
-		"test": "npm run build && node --test test/*.test.mjs",
-		"typecheck": "tsc --noEmit"
-	},
+    "scripts": {
+        "build": "n8n-node build",
+        "build:watch": "tsc --watch",
+        "dev": "n8n-node dev",
+        "lint": "n8n-node lint",
+        "lint:fix": "n8n-node lint --fix",
+        "release": "n8n-node release",
+        "prepublishOnly": "n8n-node prerelease",
+        "test": "npm run build && node --test test/*.test.mjs",
+        "typecheck": "tsc --noEmit"
+    },
     "files": [
         "dist",
         "README.md",
