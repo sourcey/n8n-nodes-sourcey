@@ -171,22 +171,32 @@ export async function fetchSourceyPage(options: FetchPageOptions): Promise<Recor
 		});
 	}
 
-	const html = await fetchText(options, requestedUrl, false);
-	const content = extractTextFromHtml(html);
-	if (!content) {
-		throw new SourceyRetrievalError('empty_page', `No content found at ${requestedUrl}`);
+	let lastError: unknown;
+	for (const fallbackUrl of fallbackPageUrls(requestedUrl, siteUrl, outputPath)) {
+		try {
+			const html = await fetchText(options, fallbackUrl, false);
+			const content = extractTextFromHtml(html);
+			if (!content) {
+				throw new SourceyRetrievalError('empty_page', `No content found at ${fallbackUrl}`);
+			}
+
+			return documentOutput({
+				title: titleFromHtml(html) || outputPath || fallbackUrl,
+				path: outputPath,
+				pageContent: content,
+				source: fallbackUrl,
+				score: 0,
+				siteUrl,
+				tab: '',
+				category: 'Pages',
+			});
+		} catch (error) {
+			lastError = error;
+		}
 	}
 
-	return documentOutput({
-		title: titleFromHtml(html) || outputPath || requestedUrl,
-		path: outputPath,
-		pageContent: content,
-		source: requestedUrl,
-		score: 0,
-		siteUrl,
-		tab: '',
-		category: 'Pages',
-	});
+	if (lastError instanceof SourceyRetrievalError) throw lastError;
+	throw new SourceyRetrievalError('fetch_failed', `Failed to fetch ${requestedUrl}`);
 }
 
 export async function loadAllSourceyDocs(options: LoadAllOptions): Promise<Record<string, unknown>[]> {
@@ -630,6 +640,31 @@ function chunkText(text: string, chunkSize: number): string[] {
 function parseSitemapUrls(xml: string): string[] {
 	const matches = xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi);
 	return [...matches].map((match) => decodeHtmlEntities(match[1] ?? '').trim()).filter(Boolean);
+}
+
+function fallbackPageUrls(requestedUrl: string, siteUrl: string, outputPath: string): string[] {
+	const urls: string[] = [];
+	const add = (url: string) => {
+		if (!urls.includes(url)) urls.push(url);
+	};
+
+	if (outputPath === ROOT_OUTPUT_PATH) {
+		add(ensureTrailingSlash(normalizeSiteUrl(siteUrl)));
+	}
+	add(requestedUrl);
+
+	const parsed = new URL(requestedUrl);
+	if (!parsed.pathname.endsWith('/') && !/\.(?:html|htm)$/i.test(parsed.pathname)) {
+		const htmlUrl = new URL(parsed.toString());
+		htmlUrl.pathname = `${htmlUrl.pathname}.html`;
+		add(htmlUrl.toString());
+
+		const slashUrl = new URL(parsed.toString());
+		slashUrl.pathname = `${slashUrl.pathname}/`;
+		add(slashUrl.toString());
+	}
+
+	return urls;
 }
 
 function titleFromHtml(html: string): string {

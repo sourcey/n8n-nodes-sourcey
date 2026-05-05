@@ -181,6 +181,21 @@ Loaded from llms-full.
 		assert.equal(fromHtml.pageContent, 'HTML Guide Fallback text.');
 	});
 
+	it('fetches normalized search paths through html fallback', async () => {
+		const result = await fetchSourceyPage({
+			httpGet: fixtureHttpGet({
+				'/reference/llms-full.txt': notFound(),
+				'/reference/guides/mcp.html': '<html><head><title>MCP Guide</title></head><body><h1>MCP Guide</h1><p>Fetched from canonical html.</p></body></html>',
+			}),
+			siteUrl: SITE_URL,
+			pathOrUrl: 'guides/mcp',
+		});
+
+		assert.equal(result.path, 'guides/mcp');
+		assert.equal(result.source, 'https://docs.example.com/reference/guides/mcp.html');
+		assert.equal(result.pageContent, 'MCP Guide Fetched from canonical html.');
+	});
+
 	it('loads pages from sitemap when llms-full is missing', async () => {
 		const results = await loadAllSourceyDocs({
 			httpGet: fixtureHttpGet({
