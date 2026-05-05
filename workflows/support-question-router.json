@@ -1,0 +1,66 @@
+{
+	"name": "Route Support Questions with Sourcey Docs",
+	"nodes": [
+		{
+			"parameters": {
+				"path": "sourcey-support-question",
+				"responseMode": "lastNode"
+			},
+			"id": "webhook",
+			"name": "Question Webhook",
+			"type": "n8n-nodes-base.webhook",
+			"typeVersion": 2,
+			"position": [0, 0]
+		},
+		{
+			"parameters": {
+				"operation": "retrieveContext",
+				"siteUrl": "https://sourcey.com/docs",
+				"query": "={{ $json.body.question || $json.query.question }}",
+				"topK": 3,
+				"maxContextChars": 8000
+			},
+			"id": "sourcey-retrieve-context",
+			"name": "Sourcey Retrieve Context",
+			"type": "n8n-nodes-sourcey.sourcey",
+			"typeVersion": 1,
+			"position": [240, 0]
+		},
+		{
+			"parameters": {
+				"conditions": {
+					"options": {
+						"caseSensitive": true,
+						"leftValue": "",
+						"typeValidation": "strict"
+					},
+					"conditions": [
+						{
+							"id": "confidence-check",
+							"leftValue": "={{ $json.confidence }}",
+							"rightValue": "low",
+							"operator": {
+								"type": "string",
+								"operation": "notEquals"
+							}
+						}
+					],
+					"combinator": "and"
+				}
+			},
+			"id": "confidence-if",
+			"name": "Has Useful Context?",
+			"type": "n8n-nodes-base.if",
+			"typeVersion": 2,
+			"position": [480, 0]
+		}
+	],
+	"connections": {
+		"Question Webhook": {
+			"main": [[{ "node": "Sourcey Retrieve Context", "type": "main", "index": 0 }]]
+		},
+		"Sourcey Retrieve Context": {
+			"main": [[{ "node": "Has Useful Context?", "type": "main", "index": 0 }]]
+		}
+	}
+}

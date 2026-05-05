@@ -1,0 +1,60 @@
+{
+	"name": "Ask Sourcey Docs Chatbot",
+	"nodes": [
+		{
+			"parameters": {},
+			"id": "chat-trigger",
+			"name": "Chat Trigger",
+			"type": "n8n-nodes-base.chatTrigger",
+			"typeVersion": 1,
+			"position": [0, 0]
+		},
+		{
+			"parameters": {
+				"operation": "retrieveContext",
+				"siteUrl": "https://sourcey.com/docs",
+				"query": "={{ $json.chatInput }}",
+				"topK": 5,
+				"maxContextChars": 12000
+			},
+			"id": "sourcey-retrieve-context",
+			"name": "Sourcey Retrieve Context",
+			"type": "n8n-nodes-sourcey.sourcey",
+			"typeVersion": 1,
+			"position": [240, 0]
+		},
+		{
+			"parameters": {
+				"assignments": {
+					"assignments": [
+						{
+							"id": "answer-context",
+							"name": "context",
+							"type": "string",
+							"value": "={{ $json.context }}"
+						},
+						{
+							"id": "answer-citations",
+							"name": "citations",
+							"type": "array",
+							"value": "={{ $json.citations }}"
+						}
+					]
+				}
+			},
+			"id": "prepare-agent-input",
+			"name": "Prepare Agent Input",
+			"type": "n8n-nodes-base.set",
+			"typeVersion": 3,
+			"position": [480, 0]
+		}
+	],
+	"connections": {
+		"Chat Trigger": {
+			"main": [[{ "node": "Sourcey Retrieve Context", "type": "main", "index": 0 }]]
+		},
+		"Sourcey Retrieve Context": {
+			"main": [[{ "node": "Prepare Agent Input", "type": "main", "index": 0 }]]
+		}
+	}
+}

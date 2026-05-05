@@ -1,0 +1,65 @@
+{
+	"name": "Build and Index Sourcey Docs",
+	"nodes": [
+		{
+			"parameters": {},
+			"id": "manual-trigger",
+			"name": "Manual Trigger",
+			"type": "n8n-nodes-base.manualTrigger",
+			"typeVersion": 1,
+			"position": [0, 0]
+		},
+		{
+			"parameters": {
+				"resource": "workflow",
+				"operation": "dispatch",
+				"owner": "sourcey",
+				"repository": "example-docs",
+				"workflowId": "deploy-docs.yml",
+				"ref": "main"
+			},
+			"id": "dispatch-build",
+			"name": "Dispatch Sourcey Build",
+			"type": "n8n-nodes-base.github",
+			"typeVersion": 1,
+			"position": [240, 0]
+		},
+		{
+			"parameters": {
+				"amount": 60,
+				"unit": "seconds"
+			},
+			"id": "wait-for-deploy",
+			"name": "Wait for Deployment",
+			"type": "n8n-nodes-base.wait",
+			"typeVersion": 1,
+			"position": [480, 0]
+		},
+		{
+			"parameters": {
+				"operation": "loadAll",
+				"siteUrl": "https://example.com/docs",
+				"outputMode": "chunk",
+				"includeContent": true,
+				"maxPages": 100,
+				"chunkSize": 4000
+			},
+			"id": "sourcey-load-all",
+			"name": "Sourcey Load All",
+			"type": "n8n-nodes-sourcey.sourcey",
+			"typeVersion": 1,
+			"position": [720, 0]
+		}
+	],
+	"connections": {
+		"Manual Trigger": {
+			"main": [[{ "node": "Dispatch Sourcey Build", "type": "main", "index": 0 }]]
+		},
+		"Dispatch Sourcey Build": {
+			"main": [[{ "node": "Wait for Deployment", "type": "main", "index": 0 }]]
+		},
+		"Wait for Deployment": {
+			"main": [[{ "node": "Sourcey Load All", "type": "main", "index": 0 }]]
+		}
+	}
+}
