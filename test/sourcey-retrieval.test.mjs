@@ -123,6 +123,28 @@ Loaded from llms-full.
 		assert.equal(fromHtml.pageContent, 'HTML Guide Fallback text.');
 	});
 
+	it('loads pages from sitemap when llms-full is missing', async () => {
+		const results = await loadAllSourceyDocs({
+			httpGet: fixtureHttpGet({
+				'/reference/llms-full.txt': notFound(),
+				'/reference/sitemap.xml': `<urlset>
+	<url><loc>https://docs.example.com/reference/guides/sitemap.html</loc></url>
+</urlset>`,
+				'/reference/guides/sitemap.html': '<html><head><title>Sitemap Guide</title></head><body><h1>Sitemap Guide</h1><p>Loaded from sitemap fallback.</p></body></html>',
+			}),
+			siteUrl: SITE_URL,
+			outputMode: 'page',
+			includeContent: true,
+			maxPages: 10,
+			chunkSize: 4000,
+		});
+
+		assert.equal(results.length, 1);
+		assert.equal(results[0].title, 'Sitemap Guide');
+		assert.equal(results[0].path, 'guides/sitemap');
+		assert.equal(results[0].pageContent, 'Sitemap Guide Loaded from sitemap fallback.');
+	});
+
 	it('loads all docs as chunk items for vector-store ingestion', async () => {
 		const results = await loadAllSourceyDocs({
 			httpGet: fixtureHttpGet({

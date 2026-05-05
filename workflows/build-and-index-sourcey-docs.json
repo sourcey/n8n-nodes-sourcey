@@ -11,54 +11,146 @@
 		},
 		{
 			"parameters": {
+				"assignments": {
+					"assignments": [
+						{
+							"id": "repo-owner",
+							"name": "repoOwner",
+							"type": "string",
+							"value": "your-org"
+						},
+						{
+							"id": "repo-name",
+							"name": "repository",
+							"type": "string",
+							"value": "your-docs-repo"
+						},
+						{
+							"id": "workflow-id",
+							"name": "workflowId",
+							"type": "string",
+							"value": "sourcey-build-docs.yml"
+						},
+						{
+							"id": "workflow-ref",
+							"name": "ref",
+							"type": "string",
+							"value": "main"
+						},
+						{
+							"id": "fallback-site-url",
+							"name": "fallbackSiteUrl",
+							"type": "string",
+							"value": "https://docs.example.com"
+						},
+						{
+							"id": "max-pages",
+							"name": "maxPages",
+							"type": "number",
+							"value": 100
+						},
+						{
+							"id": "chunk-size",
+							"name": "chunkSize",
+							"type": "number",
+							"value": 4000
+						}
+					]
+				}
+			},
+			"id": "build-inputs",
+			"name": "Build Inputs",
+			"type": "n8n-nodes-base.set",
+			"typeVersion": 3,
+			"position": [240, 0]
+		},
+		{
+			"parameters": {
 				"resource": "workflow",
 				"operation": "dispatch",
-				"owner": "sourcey",
-				"repository": "example-docs",
-				"workflowId": "deploy-docs.yml",
-				"ref": "main"
+				"owner": "={{ $json.repoOwner }}",
+				"repository": "={{ $json.repository }}",
+				"workflowId": "={{ $json.workflowId }}",
+				"ref": "={{ $json.ref }}"
 			},
 			"id": "dispatch-build",
 			"name": "Dispatch Sourcey Build",
 			"type": "n8n-nodes-base.github",
 			"typeVersion": 1,
-			"position": [240, 0]
-		},
-		{
-			"parameters": {
-				"amount": 60,
-				"unit": "seconds"
-			},
-			"id": "wait-for-deploy",
-			"name": "Wait for Deployment",
-			"type": "n8n-nodes-base.wait",
-			"typeVersion": 1,
 			"position": [480, 0]
 		},
 		{
 			"parameters": {
+				"resume": "webhook",
+				"options": {}
+			},
+			"id": "wait-for-deployment-url",
+			"name": "Wait for Deployment URL",
+			"type": "n8n-nodes-base.wait",
+			"typeVersion": 1,
+			"position": [720, 0]
+		},
+		{
+			"parameters": {
+				"assignments": {
+					"assignments": [
+						{
+							"id": "resolved-site-url",
+							"name": "siteUrl",
+							"type": "string",
+							"value": "={{ $json.deployment_status?.environment_url || $json.deployment?.environment_url || $json.deployment?.payload?.web_url || $json.target_url || $json.fallbackSiteUrl }}"
+						},
+						{
+							"id": "resolved-max-pages",
+							"name": "maxPages",
+							"type": "number",
+							"value": "={{ $json.maxPages }}"
+						},
+						{
+							"id": "resolved-chunk-size",
+							"name": "chunkSize",
+							"type": "number",
+							"value": "={{ $json.chunkSize }}"
+						}
+					]
+				}
+			},
+			"id": "deployment-url",
+			"name": "Deployment URL",
+			"type": "n8n-nodes-base.set",
+			"typeVersion": 3,
+			"position": [960, 0]
+		},
+		{
+			"parameters": {
 				"operation": "loadAll",
-				"siteUrl": "https://example.com/docs",
+				"siteUrl": "={{ $json.siteUrl }}",
 				"outputMode": "chunk",
 				"includeContent": true,
-				"maxPages": 100,
-				"chunkSize": 4000
+				"maxPages": "={{ $json.maxPages }}",
+				"chunkSize": "={{ $json.chunkSize }}"
 			},
 			"id": "sourcey-load-all",
 			"name": "Sourcey Load All",
 			"type": "n8n-nodes-sourcey.sourcey",
 			"typeVersion": 1,
-			"position": [720, 0]
+			"position": [1200, 0]
 		}
 	],
 	"connections": {
 		"Manual Trigger": {
+			"main": [[{ "node": "Build Inputs", "type": "main", "index": 0 }]]
+		},
+		"Build Inputs": {
 			"main": [[{ "node": "Dispatch Sourcey Build", "type": "main", "index": 0 }]]
 		},
 		"Dispatch Sourcey Build": {
-			"main": [[{ "node": "Wait for Deployment", "type": "main", "index": 0 }]]
+			"main": [[{ "node": "Wait for Deployment URL", "type": "main", "index": 0 }]]
 		},
-		"Wait for Deployment": {
+		"Wait for Deployment URL": {
+			"main": [[{ "node": "Deployment URL", "type": "main", "index": 0 }]]
+		},
+		"Deployment URL": {
 			"main": [[{ "node": "Sourcey Load All", "type": "main", "index": 0 }]]
 		}
 	}
