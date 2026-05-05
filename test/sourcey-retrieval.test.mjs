@@ -94,6 +94,64 @@ Use Sourcey search-index.json and llms-full.txt to answer docs questions with ci
 		);
 	});
 
+	it('keeps root and index docs pages addressable', async () => {
+		const pages = parseLlmsFullText(`### Home
+
+Path: \`/index.html\`
+
+Root page.
+`);
+
+		assert.equal(pages.index.title, 'Home');
+
+		const httpGet = fixtureHttpGet({
+			'/reference/search-index.json': JSON.stringify([
+				{
+					title: 'Home',
+					content: 'Landing docs page',
+					url: '/reference/',
+					tab: 'Guides',
+					category: 'Pages',
+				},
+			]),
+			'/reference/llms-full.txt': `### Home
+
+Path: \`/reference/index.html\`
+
+Full landing page from llms-full.
+`,
+		});
+
+		const results = await searchSourceyDocs({
+			httpGet,
+			siteUrl: SITE_URL,
+			query: 'landing docs',
+			topK: 1,
+		});
+
+		assert.equal(results[0].path, 'index');
+		assert.equal(results[0].url, 'https://docs.example.com/reference/');
+
+		const context = await retrieveSourceyContext({
+			httpGet,
+			siteUrl: SITE_URL,
+			query: 'landing docs',
+			topK: 1,
+			maxContextChars: 1000,
+		});
+
+		assert.match(context.context, /Full landing page from llms-full/);
+
+		const fetched = await fetchSourceyPage({
+			httpGet,
+			siteUrl: SITE_URL,
+			pathOrUrl: SITE_URL,
+		});
+
+		assert.equal(fetched.path, 'index');
+		assert.equal(fetched.pageContent, 'Full landing page from llms-full.');
+	});
+
 	it('fetches a page from llms-full or falls back to HTML', async () => {
 		const fromLlms = await fetchSourceyPage({
 			httpGet: fixtureHttpGet({

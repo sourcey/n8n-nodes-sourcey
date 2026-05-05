@@ -337,8 +337,12 @@ export function relativeOutputPath(url: string, siteUrl: string): string {
 	const sitePath = new URL(normalizeSiteUrl(siteUrl)).pathname.replace(/\/+$/, '');
 	let parsedPath = new URL(url).pathname;
 
+	if (sitePath && parsedPath === sitePath) {
+		return ROOT_OUTPUT_PATH;
+	}
 	if (sitePath && parsedPath.startsWith(`${sitePath}/`)) {
 		parsedPath = parsedPath.slice(sitePath.length + 1);
+		if (!parsedPath) return ROOT_OUTPUT_PATH;
 	} else {
 		parsedPath = parsedPath.replace(/^\/+/, '');
 	}
@@ -661,10 +665,10 @@ function normalizeOutputPath(path: string): string {
 	}
 
 	value = value.replace(/^\/+/, '').replace(/\/+$/, '');
-	if (!value) return '';
+	if (!value) return ROOT_OUTPUT_PATH;
 	if (value.endsWith('.html')) value = value.slice(0, -5);
 	else if (value.endsWith('.htm')) value = value.slice(0, -4);
-	if (value === 'index') return '';
+	if (value === ROOT_OUTPUT_PATH) return ROOT_OUTPUT_PATH;
 	if (value.endsWith('/index')) value = value.slice(0, -'/index'.length);
 	return value;
 }
@@ -723,6 +727,7 @@ const HEAD_RE = /<head\b.*?<\/head>/gis;
 const SCRIPT_STYLE_RE = /<(?:script|style)\b.*?>.*?<\/(?:script|style)>/gis;
 const TAG_RE = /<[^>]+>/g;
 const WHITESPACE_RE = /\s+/g;
+const ROOT_OUTPUT_PATH = 'index';
 const STOPWORDS = new Set([
 	'a',
 	'an',
