@@ -20,6 +20,7 @@ interface ParsedPage {
 	path: string;
 	outputPath: string;
 	content: string;
+	sourceUrl?: string;
 }
 
 interface Candidate {
@@ -195,12 +196,12 @@ export async function loadAllSourceyDocs(options: LoadAllOptions): Promise<Recor
 	let pages = Object.values(pageMap);
 
 	if (!pages.length) {
-		pages = await loadPagesFromSitemap(options);
+		pages = await loadPagesFromSitemap(options, maxPages);
 	}
 
 	const outputs: Record<string, unknown>[] = [];
 	for (const page of pages.slice(0, maxPages)) {
-		const source = absolutizeUrl(page.path, siteUrl);
+		const source = page.sourceUrl ?? absolutizeUrl(page.path, siteUrl);
 		if (options.outputMode === 'chunk') {
 			const chunks = chunkText(page.content, clampPositiveInteger(options.chunkSize, 4000));
 			for (let index = 0; index < chunks.length; index += 1) {
@@ -480,22 +481,25 @@ async function loadPageMap(options: SourceyOptions): Promise<Record<string, Pars
 	}
 }
 
-async function loadPagesFromSitemap(options: SourceyOptions): Promise<ParsedPage[]> {
+async function loadPagesFromSitemap(options: SourceyOptions, maxPages: number): Promise<ParsedPage[]> {
 	const siteUrl = normalizeSiteUrl(options.siteUrl);
 	const sitemap = await fetchText(options, artifactUrl(siteUrl, 'sitemap.xml'), false);
-	const urls = parseSitemapUrls(sitemap);
+	const urls = parseSitemapUrls(sitemap).slice(0, maxPages);
 	const pages: ParsedPage[] = [];
 
 	for (const url of urls) {
 		try {
-			const html = await fetchText(options, absolutizeUrl(url, siteUrl), false);
+			const sourceUrl = absolutizeUrl(url, siteUrl);
+			const outputPath = relativeOutputPath(sourceUrl, siteUrl);
+			const html = await fetchText(options, sourceUrl, false);
 			const content = extractTextFromHtml(html);
 			if (!content) continue;
 			pages.push({
-				title: titleFromHtml(html) || relativeOutputPath(absolutizeUrl(url, siteUrl), siteUrl),
-				path: relativeOutputPath(absolutizeUrl(url, siteUrl), siteUrl),
-				outputPath: relativeOutputPath(absolutizeUrl(url, siteUrl), siteUrl),
+				title: titleFromHtml(html) || outputPath,
+				path: sourceUrl,
+				outputPath,
 				content,
+				sourceUrl,
 			});
 		} catch {
 			// Skip individual pages so one stale sitemap URL does not sink ingestion.

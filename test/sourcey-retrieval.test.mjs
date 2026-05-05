@@ -142,7 +142,39 @@ Loaded from llms-full.
 		assert.equal(results.length, 1);
 		assert.equal(results[0].title, 'Sitemap Guide');
 		assert.equal(results[0].path, 'guides/sitemap');
+		assert.equal(results[0].source, 'https://docs.example.com/reference/guides/sitemap.html');
+		assert.equal(results[0].metadata.source, 'https://docs.example.com/reference/guides/sitemap.html');
 		assert.equal(results[0].pageContent, 'Sitemap Guide Loaded from sitemap fallback.');
+	});
+
+	it('limits sitemap fallback page fetches before hydration', async () => {
+		const fetched = [];
+		const results = await loadAllSourceyDocs({
+			httpGet: async (url, responseFormat) => {
+				const path = new URL(url).pathname;
+				fetched.push(path);
+				if (path === '/reference/llms-full.txt') throw notFound();
+				if (path === '/reference/sitemap.xml') {
+					return `<urlset>
+	<url><loc>https://docs.example.com/reference/guides/one.html</loc></url>
+	<url><loc>https://docs.example.com/reference/guides/two.html</loc></url>
+</urlset>`;
+				}
+				if (path === '/reference/guides/one.html') {
+					return '<html><head><title>One</title></head><body><p>First page.</p></body></html>';
+				}
+				if (responseFormat === 'json') return {};
+				throw new Error(`unexpected fetch: ${path}`);
+			},
+			siteUrl: SITE_URL,
+			outputMode: 'page',
+			includeContent: true,
+			maxPages: 1,
+			chunkSize: 4000,
+		});
+
+		assert.equal(results.length, 1);
+		assert.equal(fetched.includes('/reference/guides/two.html'), false);
 	});
 
 	it('loads all docs as chunk items for vector-store ingestion', async () => {
