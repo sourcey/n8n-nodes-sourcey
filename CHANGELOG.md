@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Re-published the Sourcey n8n node through GitHub Actions for npm provenance.
+
 ## 0.1.1
 
 - Fixed Fetch Page hydration for normalized Sourcey search paths by falling
