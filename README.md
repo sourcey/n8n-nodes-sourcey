@@ -17,6 +17,18 @@ inside n8n.
 Install `n8n-nodes-sourcey` from the n8n community nodes panel, or install it
 manually in a self-hosted n8n instance.
 
+The package is published on npm as `n8n-nodes-sourcey`. The current public
+release is published from GitHub Actions with npm provenance:
+
+- npm: <https://www.npmjs.com/package/n8n-nodes-sourcey>
+- source: <https://github.com/sourcey/n8n-nodes-sourcey>
+- provenance:
+  <https://registry.npmjs.org/-/npm/v1/attestations/n8n-nodes-sourcey@0.1.2>
+
+Creator Portal verification is pending. Until n8n grants verified status, the
+package is available as a community node for self-hosted n8n installs and any
+n8n environment that allows community packages.
+
 ## Operations
 
 ### Retrieve Context
@@ -83,7 +95,8 @@ None in Phase 1. The node consumes public Sourcey docs sites.
 
 This package is generated from the official `n8n-node` scaffold and uses the
 programmatic node style. It keeps runtime dependencies empty for verified
-community-node eligibility.
+community-node eligibility. Releases are published from GitHub Actions so npm
+can attach provenance, which n8n requires for Creator Portal verification.
 
 ## Development
 
