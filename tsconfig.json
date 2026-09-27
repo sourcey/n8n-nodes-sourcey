@@ -19,6 +19,7 @@
 		"declaration": true,
 		"sourceMap": true,
 		"skipLibCheck": true,
+		"ignoreDeprecations": "6.0",
 		"outDir": "./dist/"
 	},
 	"include": ["credentials/**/*", "nodes/**/*", "nodes/**/*.json", "package.json"]
