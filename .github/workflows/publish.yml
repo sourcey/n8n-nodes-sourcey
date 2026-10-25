@@ -45,6 +45,12 @@
 name: Publish
 
 on:
+  workflow_dispatch:
+    inputs:
+      publisher_check:
+        description: Validate trusted publisher authentication without publishing
+        type: boolean
+        default: true
   push:
     tags:
       # Matches 0.1.0, 1.2.3, 2.0.0-rc.1, etc.
@@ -53,6 +59,7 @@ on:
 
 jobs:
   publish:
+    if: ${{ !inputs.publisher_check }}
     name: Publish to npm
     runs-on: ubuntu-latest
 
@@ -81,3 +88,25 @@ jobs:
         run: npm run release
         env:
           NPM_CONFIG_ACCESS: public
+
+  publisher_check:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publisher_check }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "24"
+      - run: npm install --global npm@12.2.1
+      - name: Validate repository authentication without publishing
+        run: |
+          log="$RUNNER_TEMP/npm-publisher-check.log"
+          trap 'rm -f "$log"' EXIT
+          npm dist-tag ls n8n-nodes-sourcey --loglevel=verbose > "$log" 2>&1
+          if ! grep -Fq 'verbose oidc Successfully retrieved and set token' "$log"; then
+            echo 'Trusted publisher authentication was not validated.' >&2
+            exit 1
+          fi
+          echo 'Repository trusted publisher authentication validated; no package or tag was changed.'
