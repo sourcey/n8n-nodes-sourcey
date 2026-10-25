@@ -59,7 +59,7 @@ on:
 
 jobs:
   publish:
-    if: ${{ !inputs.publisher_check }}
+    if: ${{ github.event_name == 'push' }}
     name: Publish to npm
     runs-on: ubuntu-latest
 
