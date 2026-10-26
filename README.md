@@ -5,9 +5,14 @@ Use Sourcey-generated documentation inside n8n workflows.
 This community node reads the public artefacts emitted by a Sourcey static
 docs site:
 
-- `search-index.json` for search candidates
-- `llms-full.txt` for full-page hydration
+- `documents.json` for search candidates: every page, operation and schema,
+  each with its own Markdown, which the node reads for its content
+- `llms-full.txt` for whole pages, and for a document whose Markdown cannot be
+  read
 - `sitemap.xml` for ingestion
+
+A site built before Sourcey 3.7.1 publishes `search-index.json` in place of
+`documents.json`, and the node reads that instead.
 
 It does not need credentials for public docs and does not run `sourcey build`
 inside n8n.
@@ -17,13 +22,11 @@ inside n8n.
 Install `n8n-nodes-sourcey` from the n8n community nodes panel, or install it
 manually in a self-hosted n8n instance.
 
-The package is published on npm as `n8n-nodes-sourcey`. The current public
-release is published from GitHub Actions with npm provenance:
+The package is published on npm as `n8n-nodes-sourcey`, from GitHub Actions
+with npm provenance, which its npm page shows for each release:
 
 - npm: <https://www.npmjs.com/package/n8n-nodes-sourcey>
 - source: <https://github.com/sourcey/n8n-nodes-sourcey>
-- provenance:
-  <https://registry.npmjs.org/-/npm/v1/attestations/n8n-nodes-sourcey@0.1.2>
 
 Creator Portal verification is pending. Until n8n grants verified status, the
 package is available as a community node for self-hosted n8n installs and any
@@ -45,8 +48,9 @@ Use this for Chat Trigger -> Sourcey -> AI Agent -> Respond workflows.
 
 ### Search
 
-Returns one item per ranked result from `search-index.json`. Each item includes
-title, URL, excerpt, tab, category, score, and metadata.
+Returns one item per ranked result from `documents.json`, each page, operation
+and schema a result of its own. Each item includes title, URL, excerpt, tab,
+category, score, and metadata, with the method and path of an operation.
 
 Use this for branching, result selection, and support routing.
 

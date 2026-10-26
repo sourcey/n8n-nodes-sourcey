@@ -13,6 +13,10 @@ export interface SearchEntry {
 	featured?: boolean;
 	method?: string;
 	path?: string;
+	/** The document's words, which a `documents.json` entry carries beside its summary. */
+	searchText?: string;
+	/** The document's own Markdown, which `documents.json` names for every page, operation and schema. */
+	markdown?: string;
 }
 
 interface ParsedPage {
@@ -30,7 +34,10 @@ interface Candidate {
 	matchedUrl: string;
 	outputPath: string;
 	anchor: string;
+	markdownUrl?: string;
 }
+
+type PageMapLoader = () => Promise<Record<string, ParsedPage>>;
 
 interface SourceyOptions {
 	httpGet: HttpGet;
@@ -87,8 +94,7 @@ export async function retrieveSourceyContext(options: RetrieveContextOptions): P
 		};
 	}
 
-	const pageMap = await loadPageMap(options);
-	const documents = await hydrateCandidates(options, selected, pageMap);
+	const documents = await hydrateCandidates(options, selected, memoized(() => loadPageMap(options)));
 	const maxContextChars = clampPositiveInteger(options.maxContextChars, 12000);
 	const contextParts: string[] = [];
 	const citations = [];
@@ -174,7 +180,7 @@ export async function fetchSourceyPage(options: FetchPageOptions): Promise<Recor
 	let lastError: unknown;
 	for (const fallbackUrl of fallbackPageUrls(requestedUrl, siteUrl, outputPath)) {
 		try {
-			const html = await fetchText(options, fallbackUrl, false);
+			const html = await fetchText(options, fallbackUrl);
 			const content = extractTextFromHtml(html);
 			if (!content) {
 				throw new SourceyRetrievalError('empty_page', `No content found at ${fallbackUrl}`);
@@ -266,15 +272,19 @@ export function rankSearchEntries(
 		url.hash = '';
 		const sourceUrl = url.toString();
 		const outputPath = relativeOutputPath(sourceUrl, siteUrl);
-		if (!outputPath) continue;
+		const markdownUrl = entry.markdown ? absolutizeUrl(entry.markdown, siteUrl) : undefined;
+		// A document with Markdown of its own is a match of its own, such as each operation on a
+		// single-page reference; a search entry stands for its page.
+		if (!outputPath && !markdownUrl) continue;
 
 		const score = scoreEntry(entry, queryTokens, normalizedQuery);
 		if (score <= 0) continue;
 
-		const candidate = { entry, score, sourceUrl, matchedUrl, outputPath, anchor };
-		const current = bestByPath.get(outputPath);
+		const candidate = { entry, score, sourceUrl, matchedUrl, outputPath, anchor, markdownUrl };
+		const key = markdownUrl ?? outputPath;
+		const current = bestByPath.get(key);
 		if (!current || candidate.score > current.score) {
-			bestByPath.set(outputPath, candidate);
+			bestByPath.set(key, candidate);
 		}
 	}
 
@@ -375,16 +385,23 @@ async function findCandidates(options: SearchOptions): Promise<Candidate[]> {
 	});
 }
 
+/**
+ * Each match reads as its own Markdown, which a Sourcey build publishes for every page, operation
+ * and schema. A site that publishes none falls back to its page in `llms-full.txt`, loaded only
+ * then, and then to the page's HTML.
+ */
 async function hydrateCandidates(
 	options: SourceyOptions,
 	candidates: Candidate[],
-	pageMap: Record<string, ParsedPage>,
+	pageMap: PageMapLoader,
 ): Promise<Array<Record<string, unknown>>> {
 	const documents = [];
 	for (const candidate of candidates) {
-		const page = pageMap[candidate.outputPath];
-		const title = page?.title ?? candidate.entry.title;
-		const content = page?.content || await fetchPageFallback(options, candidate.sourceUrl) || candidate.entry.content;
+		const markdown = candidate.markdownUrl ? (await fetchOptionalText(options, candidate.markdownUrl)).trim() : '';
+		const page = markdown ? undefined : (await pageMap())[candidate.outputPath];
+		// A document keeps its own title; a search entry stands for its page.
+		const title = candidate.markdownUrl ? candidate.entry.title : page?.title ?? candidate.entry.title;
+		const content = markdown || page?.content || await fetchPageFallback(options, candidate.sourceUrl) || candidate.entry.content;
 		documents.push(documentOutput({
 			title,
 			path: candidate.outputPath,
@@ -449,7 +466,16 @@ function documentOutput(input: {
 	};
 }
 
+/**
+ * The site's documents, from `documents.json`, the index a Sourcey build publishes for agents:
+ * each page, operation and schema with its summary, its words and its own Markdown. A site built
+ * before Sourcey 3.7.1 publishes `search-index.json` instead.
+ */
 async function loadSearchEntries(options: SourceyOptions): Promise<SearchEntry[]> {
+	const documentsUrl = artifactUrl(options.siteUrl, 'documents.json');
+	const index = await fetchArtifact(options, documentsUrl);
+	if (index !== undefined) return documentEntries(parseJson(index, documentsUrl), options.siteUrl);
+
 	const raw = await fetchJson(options, artifactUrl(options.siteUrl, 'search-index.json'));
 	if (!Array.isArray(raw)) {
 		throw new SourceyRetrievalError('invalid_search_index', 'search-index.json did not contain a list');
@@ -482,22 +508,13 @@ async function loadSearchEntries(options: SourceyOptions): Promise<SearchEntry[]
 }
 
 async function loadPageMap(options: SourceyOptions): Promise<Record<string, ParsedPage>> {
-	try {
-		return normalizePageMapForSite(
-			parseLlmsFullText(await fetchText(options, artifactUrl(options.siteUrl, 'llms-full.txt'), true)),
-			options.siteUrl,
-		);
-	} catch (error) {
-		if (error instanceof SourceyRetrievalError && error.code === 'missing_artifact') {
-			return {};
-		}
-		throw error;
-	}
+	const llmsFull = await fetchArtifact(options, artifactUrl(options.siteUrl, 'llms-full.txt'));
+	return llmsFull === undefined ? {} : normalizePageMapForSite(parseLlmsFullText(llmsFull), options.siteUrl);
 }
 
 async function loadPagesFromSitemap(options: SourceyOptions, maxPages: number): Promise<ParsedPage[]> {
 	const siteUrl = normalizeSiteUrl(options.siteUrl);
-	const sitemap = await fetchText(options, artifactUrl(siteUrl, 'sitemap.xml'), false);
+	const sitemap = await fetchText(options, artifactUrl(siteUrl, 'sitemap.xml'));
 	const urls = parseSitemapUrls(sitemap).slice(0, maxPages);
 	const pages: ParsedPage[] = [];
 
@@ -505,7 +522,7 @@ async function loadPagesFromSitemap(options: SourceyOptions, maxPages: number): 
 		try {
 			const sourceUrl = absolutizeUrl(url, siteUrl);
 			const outputPath = relativeOutputPath(sourceUrl, siteUrl);
-			const html = await fetchText(options, sourceUrl, false);
+			const html = await fetchText(options, sourceUrl);
 			const content = extractTextFromHtml(html);
 			if (!content) continue;
 			pages.push({
@@ -537,32 +554,109 @@ function normalizePageMapForSite(pageMap: Record<string, ParsedPage>, siteUrl: s
 
 async function fetchJson(options: SourceyOptions, url: string): Promise<unknown> {
 	const raw = await options.httpGet(url, 'json');
-	if (typeof raw === 'string') {
-		try {
-			return JSON.parse(raw) as unknown;
-		} catch (error) {
-			throw new SourceyRetrievalError('invalid_json', `Failed to parse JSON from ${url}: ${String(error)}`);
-		}
-	}
-	return raw;
+	return typeof raw === 'string' ? parseJson(raw, url) : raw;
 }
 
-async function fetchText(options: SourceyOptions, url: string, missingOk: boolean): Promise<string> {
+function parseJson(raw: string, url: string): unknown {
+	const parsed = attempt(() => JSON.parse(raw) as unknown);
+	if ('failure' in parsed) {
+		throw new SourceyRetrievalError('invalid_json', `Failed to parse JSON from ${url}: ${String(parsed.failure)}`);
+	}
+	return parsed.value;
+}
+
+/**
+ * What a step returned, or why it failed. Each helper here settles a failure and then throws its
+ * own error with a code, which the node wraps for n8n, rather than throwing from a catch block.
+ */
+function attempt<T>(run: () => T): { value: T } | { failure: unknown } {
 	try {
-		const raw = await options.httpGet(url, 'text');
-		return typeof raw === 'string' ? raw : JSON.stringify(raw);
+		return { value: run() };
+	} catch (failure) {
+		return { failure };
+	}
+}
+
+async function request(options: SourceyOptions, url: string): Promise<{ value: unknown } | { failure: string }> {
+	try {
+		return { value: await options.httpGet(url, 'text') };
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		if (missingOk && /404|not found/i.test(message)) {
-			throw new SourceyRetrievalError('missing_artifact', `Missing Sourcey artifact at ${url}`);
-		}
-		throw new SourceyRetrievalError('fetch_failed', `Failed to fetch ${url}: ${message}`);
+		return { failure: error instanceof Error ? error.message : String(error) };
+	}
+}
+
+const OPERATION_ID_RE = /^([A-Z]+)\s+(\S.*)$/;
+
+/** The entries of a `documents.json` index: every page, operation and schema with its own Markdown. */
+function documentEntries(index: unknown, siteUrl: string): SearchEntry[] {
+	if (!isRecord(index) || !Array.isArray(index.documents)) {
+		throw new SourceyRetrievalError('invalid_documents', 'documents.json did not contain a documents list');
+	}
+
+	const entries = index.documents
+		.filter(isRecord)
+		.map((item): SearchEntry | null => {
+			const title = coerceText(item.title);
+			const url = coerceText(item.url);
+			if (!title || !url) return null;
+			// An operation is named by its method and path, such as `GET /pets`.
+			const operation = OPERATION_ID_RE.exec(coerceText(item.documentId));
+			return {
+				title,
+				content: coerceText(item.description),
+				searchText: coerceText(item.searchText) || undefined,
+				url: absolutizeUrl(url, siteUrl),
+				tab: coerceText(item.tab) || 'Docs',
+				category: coerceText(item.kind) || 'page',
+				method: operation?.[1],
+				path: operation?.[2],
+				markdown: coerceText(item.markdown) || undefined,
+			};
+		})
+		.filter((entry): entry is SearchEntry => entry !== null);
+
+	if (!entries.length) {
+		throw new SourceyRetrievalError('empty_documents', 'documents.json did not contain any usable documents');
+	}
+	return entries;
+}
+
+function memoized<T>(load: () => Promise<T>): () => Promise<T> {
+	let value: Promise<T> | undefined;
+	return () => (value ??= load());
+}
+
+async function fetchText(options: SourceyOptions, url: string): Promise<string> {
+	const response = await request(options, url);
+	if ('failure' in response) {
+		throw new SourceyRetrievalError('fetch_failed', `Failed to fetch ${url}: ${response.failure}`);
+	}
+	return asText(response.value);
+}
+
+/** A file a Sourcey build may not publish: its text, or undefined where the site has none. */
+async function fetchArtifact(options: SourceyOptions, url: string): Promise<string | undefined> {
+	const response = await request(options, url);
+	if (!('failure' in response)) return asText(response.value);
+	if (/404|not found/i.test(response.failure)) return undefined;
+	throw new SourceyRetrievalError('fetch_failed', `Failed to fetch ${url}: ${response.failure}`);
+}
+
+function asText(raw: unknown): string {
+	return typeof raw === 'string' ? raw : JSON.stringify(raw);
+}
+
+async function fetchOptionalText(options: SourceyOptions, url: string): Promise<string> {
+	try {
+		return await fetchText(options, url);
+	} catch {
+		return '';
 	}
 }
 
 async function fetchPageFallback(options: SourceyOptions, url: string): Promise<string> {
 	try {
-		return extractTextFromHtml(await fetchText(options, url, false));
+		return extractTextFromHtml(await fetchText(options, url));
 	} catch {
 		return '';
 	}
@@ -571,8 +665,9 @@ async function fetchPageFallback(options: SourceyOptions, url: string): Promise<
 function scoreEntry(entry: SearchEntry, queryTokens: string[], normalizedQuery: string): number {
 	if (!queryTokens.length) return entry.featured ? 1 : 0;
 
+	const words = [entry.content, entry.searchText].filter(Boolean).join(' ');
 	const title = normalizeText(entry.title);
-	const content = normalizeText(entry.content);
+	const content = normalizeText(words);
 	const path = normalizeText(entry.path ?? '');
 	const tab = normalizeText(entry.tab);
 	const category = normalizeText(entry.category);
@@ -581,7 +676,7 @@ function scoreEntry(entry: SearchEntry, queryTokens: string[], normalizedQuery: 
 
 	const titleTokens = new Set(tokenize(entry.title));
 	const pathTokens = new Set(tokenize(`${entry.path ?? ''} ${entry.url}`));
-	const contentTokens = new Set(tokenize(entry.content));
+	const contentTokens = new Set(tokenize(words));
 	const metaTokens = new Set(tokenize(`${entry.tab} ${entry.category} ${entry.method ?? ''}`));
 
 	let score = 0;
@@ -590,6 +685,8 @@ function scoreEntry(entry: SearchEntry, queryTokens: string[], normalizedQuery: 
 
 	for (const token of queryTokens) {
 		if (titleTokens.has(token)) score += 8;
+		// A word the title extends, such as "deploy" in "Deploying".
+		else if (token.length >= 4 && [...titleTokens].some((word) => word.startsWith(token))) score += 6;
 		if (pathTokens.has(token)) score += 5;
 		if (contentTokens.has(token)) score += 3;
 		if (metaTokens.has(token)) score += 2;
@@ -678,15 +775,11 @@ function artifactUrl(siteUrl: string, artifactName: string): string {
 
 function normalizeSiteUrl(siteUrl: string): string {
 	const trimmed = siteUrl.trim().replace(/\/+$/, '');
-	try {
-		const parsed = new URL(trimmed);
-		if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-			throw new Error('Unsupported protocol');
-		}
-		return parsed.toString().replace(/\/+$/, '');
-	} catch {
+	const parsed = attempt(() => new URL(trimmed));
+	if ('failure' in parsed || (parsed.value.protocol !== 'http:' && parsed.value.protocol !== 'https:')) {
 		throw new SourceyRetrievalError('invalid_site_url', 'Site URL must be an absolute http(s) URL');
 	}
+	return parsed.value.toString().replace(/\/+$/, '');
 }
 
 function normalizeOutputPath(path: string): string {

@@ -68,6 +68,68 @@ Use Sourcey search-index.json and llms-full.txt to answer docs questions with ci
 		assert.deepEqual(result.citations[0].title, 'Search Guide');
 	});
 
+	it('reads documents.json and each match from its own Markdown', async () => {
+		const documents = {
+			version: 1,
+			name: 'Pets',
+			documents: [
+				{
+					kind: 'page',
+					title: 'Deploying',
+					description: 'Publish the built folder on any static host.',
+					tab: '',
+					url: 'https://docs.example.com/reference/deploying',
+					markdown: 'https://docs.example.com/reference/deploying.md',
+					searchText: 'Upload the folder to GitHub Pages, Netlify or Cloudflare Pages.',
+				},
+				{
+					kind: 'operation',
+					documentId: 'GET /pets',
+					title: 'List pets',
+					description: 'Returns every pet in the shelter.',
+					tab: 'api',
+					url: 'https://docs.example.com/reference/api#operation-pets-get',
+					markdown: 'https://docs.example.com/reference/api/list-pets.md',
+					searchText: 'listPets List pets Returns every pet in the shelter.',
+				},
+				{
+					kind: 'operation',
+					documentId: 'POST /pets',
+					title: 'Create a pet',
+					description: 'Registers a new pet.',
+					tab: 'api',
+					url: 'https://docs.example.com/reference/api#operation-pets-post',
+					markdown: 'https://docs.example.com/reference/api/create-pet.md',
+					searchText: 'createPet Create a pet Registers a new pet.',
+				},
+			],
+		};
+		const requested = [];
+		const served = fixtureHttpGet({
+			'/reference/documents.json': JSON.stringify(documents),
+			'/reference/api/list-pets.md': '# List pets\n\n`GET /pets` returns every pet, newest first.',
+			'/reference/api/create-pet.md': '# Create a pet\n\n`POST /pets` registers a pet.',
+			'/reference/deploying.md': '# Deploying\n\nUpload the folder to any static host.',
+		});
+		const httpGet = (url, responseFormat) => {
+			requested.push(new URL(url).pathname);
+			return served(url, responseFormat);
+		};
+
+		// Each operation on one reference page is a match of its own, with its method and path.
+		const results = await searchSourceyDocs({ httpGet, siteUrl: SITE_URL, query: 'pets', topK: 5 });
+		assert.deepEqual(results.map((result) => result.title), ['List pets', 'Create a pet']);
+		assert.equal(results[0].excerpt, 'Returns every pet in the shelter.');
+		assert.equal(results[0].method, 'GET');
+		assert.equal(results[0].apiPath, '/pets');
+
+		// A match reads as its own Markdown; llms-full.txt is never requested.
+		const context = await retrieveSourceyContext({ httpGet, siteUrl: SITE_URL, query: 'deploy on github', topK: 1, maxContextChars: 2000 });
+		assert.equal(context.citations[0].title, 'Deploying');
+		assert.match(context.context, /Upload the folder to any static host/);
+		assert.ok(!requested.includes('/reference/llms-full.txt'));
+	});
+
 	it('searches without duplicating a base path in absolute URLs', async () => {
 		const results = await searchSourceyDocs({
 			httpGet: fixtureHttpGet({
